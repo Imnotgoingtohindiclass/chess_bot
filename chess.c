@@ -14,25 +14,30 @@ SDL_Renderer* gRenderer = NULL;
 SDL_Texture* gPieceTextures[128] = {NULL};
 
 char board[8][8] = {
+    {'r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'},
+    {'p', 'p', 'p', 'p', 'p', 'p', 'p', 'p'},
     {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '},
     {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '},
     {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '},
     {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '},
-    {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '},
-    {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '},
-    {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '},
-    {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '}
+    {'P', 'P', 'P', 'P', 'P', 'P', 'P', 'P'},
+    {'R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R'}
 };
 
 bool init();
 bool loadMedia();
 void close();
 void renderBoard();
+void renderPieces();
 SDL_Texture* loadTexture(const char* path);
 
 int main(int argc, char* args[]) {
     if (!init()) {
         printf("Failed to initialize!\n");
+        return 1;
+    }
+    if (!loadMedia()) {
+        printf("Failed to load media!\n");
         return 1;
     }
 
@@ -49,6 +54,7 @@ int main(int argc, char* args[]) {
         SDL_SetRenderDrawColor(gRenderer, 0xFF, 0xFF, 0xFF, 0xFF);
         SDL_RenderClear(gRenderer);
         renderBoard();
+        renderPieces();
         SDL_RenderPresent(gRenderer);
     }
 
@@ -95,6 +101,30 @@ void renderBoard() {
             if ((r + c) % 2 == 0) SDL_SetRenderDrawColor(gRenderer, 238, 238, 210, 255);
             else SDL_SetRenderDrawColor(gRenderer, 118, 150, 86, 255);
             SDL_RenderFillRect(gRenderer, &squareRect);
+        }
+    }
+}
+
+bool loadMedia() {
+    const char* pieces[] = {"wP", "wR", "wN", "wB", "wQ", "wK", "bP", "bR", "bN", "bB", "bQ", "bK"};
+    const char ids[] = {'P', 'R', 'N', 'B', 'Q', 'K', 'p', 'r', 'n', 'b', 'q', 'k'};
+    for (int i = 0; i < 12; ++i) {
+        char path[256];
+        sprintf(path, "img/%s.png", pieces[i]);
+        gPieceTextures[(int)ids[i]] = loadTexture(path);
+        if (!gPieceTextures[(int)ids[i]]) return false;
+    }
+    return true;
+}
+
+void renderPieces() {
+    for (int r = 0; r < 8; ++r) {
+        for (int c = 0; c < 8; ++c) {
+            char piece = board[r][c];
+            if (piece != ' ') {
+                SDL_Rect destRect = {c * SQUARE_SIZE, r * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE};
+                SDL_RenderCopy(gRenderer, gPieceTextures[(int)piece], NULL, &destRect);
+            }
         }
     }
 }
