@@ -47,6 +47,7 @@ void handleMouseUp(int x, int y);
 SDL_Texture* loadTexture(const char* path);
 bool isValidMove(char boardState[8][8], char piece, int fromX, int fromY, int toX, int toY, char player);
 bool isSquareAttacked(char boardState[8][8], int x, int y, char attackerColor);
+bool isKingInCheck(char boardState[8][8], char kingColor);
 
 int main(int argc, char* args[]) {
     if (!init()) {
@@ -188,18 +189,25 @@ void handleMouseUp(int x, int y) {
 
     int toX = x / SQUARE_SIZE;
     int toY = y / SQUARE_SIZE;
+    bool moveIsLegal = false;
 
     if (isValidMove(board, draggedPiece, dragStartPosition.x, dragStartPosition.y, toX, toY, currentPlayer)) {
+        char tempBoard[8][8];
+        memcpy(tempBoard, board, sizeof(board));
+        tempBoard[toY][toX] = draggedPiece;
+        tempBoard[dragStartPosition.y][dragStartPosition.x] = ' ';
+
+        if (!isKingInCheck(tempBoard, currentPlayer)) {
+            moveIsLegal = true;
+        }
+    }
+
+    if (moveIsLegal) {
         board[toY][toX] = draggedPiece;
 
         if (toupper(draggedPiece) == 'K' && abs(toX - dragStartPosition.x) == 2) {
-            if (toX == 6) {
-                board[toY][5] = board[toY][7];
-                board[toY][7] = ' ';
-            } else {
-                board[toY][3] = board[toY][0];
-                board[toY][0] = ' ';
-            }
+            if (toX == 6) { board[toY][5] = board[toY][7]; board[toY][7] = ' '; }
+            else { board[toY][3] = board[toY][0]; board[toY][0] = ' '; }
         }
 
         // castling
@@ -329,4 +337,23 @@ bool isSquareAttacked(char boardState[8][8], int x, int y, char attackerColor) {
         }
     }
     return false;
+}
+
+bool isKingInCheck(char boardState[8][8], char kingColor) {
+    int kingX = -1, kingY = -1;
+    char kingChar = (kingColor == 'w') ? 'K' : 'k';
+    char attackerColor = (kingColor == 'w') ? 'b' : 'w';
+
+    for (int r = 0; r < 8; ++r) {
+        for (int c = 0; c < 8; ++c) {
+            if (boardState[r][c] == kingChar) {
+                kingX = c;
+                kingY = r;
+                break;
+            }
+        }
+    }
+    if (kingX == -1) return false;
+
+    return isSquareAttacked(boardState, kingX, kingY, attackerColor);
 }
