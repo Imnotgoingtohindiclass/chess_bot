@@ -31,6 +31,11 @@ char draggedPiece = ' ';
 SDL_Point dragStartPosition = {-1, -1};
 SDL_Point mousePosition = {0, 0};
 
+bool wKingMoved = false;
+bool bKingMoved = false;
+bool wRookAMoved = false, wRookHMoved = false;
+bool bRookAMoved = false, bRookHMoved = false;
+
 bool init();
 bool loadMedia();
 void close();
@@ -41,6 +46,7 @@ void handleMouseMotion(int x, int y);
 void handleMouseUp(int x, int y);
 SDL_Texture* loadTexture(const char* path);
 bool isValidMove(char boardState[8][8], char piece, int fromX, int fromY, int toX, int toY, char player);
+bool isSquareAttacked(char boardState[8][8], int x, int y, char attackerColor);
 
 int main(int argc, char* args[]) {
     if (!init()) {
@@ -185,6 +191,25 @@ void handleMouseUp(int x, int y) {
 
     if (isValidMove(board, draggedPiece, dragStartPosition.x, dragStartPosition.y, toX, toY, currentPlayer)) {
         board[toY][toX] = draggedPiece;
+
+        if (toupper(draggedPiece) == 'K' && abs(toX - dragStartPosition.x) == 2) {
+            if (toX == 6) {
+                board[toY][5] = board[toY][7];
+                board[toY][7] = ' ';
+            } else {
+                board[toY][3] = board[toY][0];
+                board[toY][0] = ' ';
+            }
+        }
+
+        // castling
+        if (draggedPiece == 'K') wKingMoved = true;
+        if (draggedPiece == 'k') bKingMoved = true;
+        if (draggedPiece == 'R' && dragStartPosition.x == 0 && dragStartPosition.y == 7) wRookAMoved = true;
+        if (draggedPiece == 'R' && dragStartPosition.x == 7 && dragStartPosition.y == 7) wRookHMoved = true;
+        if (draggedPiece == 'r' && dragStartPosition.x == 0 && dragStartPosition.y == 0) bRookAMoved = true;
+        if (draggedPiece == 'r' && dragStartPosition.x == 7 && dragStartPosition.y == 0) bRookHMoved = true;
+
         currentPlayer = (currentPlayer == 'w') ? 'b' : 'w';
     } else {
         board[dragStartPosition.y][dragStartPosition.x] = draggedPiece;
@@ -220,8 +245,7 @@ bool isValidMove(char boardState[8][8], char piece, int fromX, int fromY, int to
             }
             return false;
 
-        case 'N':
-            return (abs(dx) == 1 && abs(dy) == 2) || (abs(dx) == 2 && abs(dy) == 1);
+        case 'N': return (abs(dx) == 1 && abs(dy) == 2) || (abs(dx) == 2 && abs(dy) == 1);
 
         case 'B':
             if (abs(dx) != abs(dy)) return false;
@@ -253,14 +277,56 @@ bool isValidMove(char boardState[8][8], char piece, int fromX, int fromY, int to
              int stepX_q = (dx > 0) ? 1 : ((dx < 0) ? -1 : 0);
              int stepY_q = (dy > 0) ? 1 : ((dy < 0) ? -1 : 0);
              int steps = (abs(dx) > abs(dy)) ? abs(dx) : abs(dy);
-             for(int i = 1; i < steps; ++i) {
-                 if (boardState[fromY + i*stepY_q][fromX + i*stepX_q] != ' ') return false;
-             }
+             for(int i = 1; i < steps; ++i) if (boardState[fromY + i*stepY_q][fromX + i*stepX_q] != ' ') return false;
              return true;
 
         case 'K':
-            return (abs(dx) <= 1 && abs(dy) <= 1);
-    }
+            if (abs(dx) <= 1 && abs(dy) <= 1) return true;
 
+            // castling
+            if (abs(dx) == 2 && dy == 0) {
+                 if (isSquareAttacked(boardState, fromX, fromY, (player == 'w' ? 'b' : 'w'))) return false;
+
+                 if (player == 'w') {
+                     if (wKingMoved) return false;
+                     if (dx == 2) {
+                         if (wRookHMoved || boardState[7][5] != ' ' || boardState[7][6] != ' ') return false;
+                         return !isSquareAttacked(boardState, 5, 7, 'b') && !isSquareAttacked(boardState, 6, 7, 'b');
+                     } else {
+                         if (wRookAMoved || boardState[7][1] != ' ' || boardState[7][2] != ' ' || boardState[7][3] != ' ') return false;
+                         return !isSquareAttacked(boardState, 2, 7, 'b') && !isSquareAttacked(boardState, 3, 7, 'b');
+                     }
+                 } else {
+                     if (bKingMoved) return false;
+                     if (dx == 2) {
+                         if (bRookHMoved || boardState[0][5] != ' ' || boardState[0][6] != ' ') return false;
+                         return !isSquareAttacked(boardState, 5, 0, 'w') && !isSquareAttacked(boardState, 6, 0, 'w');
+                     } else {
+                         if (bRookAMoved || boardState[0][1] != ' ' || boardState[0][2] != ' ' || boardState[0][3] != ' ') return false;
+                         return !isSquareAttacked(boardState, 2, 0, 'w') && !isSquareAttacked(boardState, 3, 0, 'w');
+                     }
+                 }
+             }
+             return false;
+    }
+    return false;
+}
+
+bool isSquareAttacked(char boardState[8][8], int x, int y, char attackerColor) {
+    for (int r = 0; r < 8; ++r) {
+        for (int c = 0; c < 8; ++c) {
+            char piece = boardState[r][c];
+            if (piece != ' ' && ((attackerColor == 'w' && isupper(piece)) || (attackerColor == 'b' && islower(piece)))) {
+                if (toupper(piece) == 'P') {
+                    int dy = y - r;
+                    int dx = abs(x - c);
+                    if (attackerColor == 'w' && dy == -1 && dx == 1) return true;
+                    if (attackerColor == 'b' && dy == 1 && dx == 1) return true;
+                } else if (isValidMove(boardState, piece, c, r, x, y, attackerColor)) {
+                    return true;
+                }
+            }
+        }
+    }
     return false;
 }
