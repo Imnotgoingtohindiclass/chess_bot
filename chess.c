@@ -26,28 +26,38 @@ char board[8][8] = {
 };
 
 char currentPlayer = 'w';
+bool gameOver = false;
+
 bool isDragging = false;
 char draggedPiece = ' ';
 SDL_Point dragStartPosition = {-1, -1};
 SDL_Point mousePosition = {0, 0};
+
+bool awaitingPromotion = false;
+SDL_Point promotionSquare = {-1, -1};
 
 bool wKingMoved = false;
 bool bKingMoved = false;
 bool wRookAMoved = false, wRookHMoved = false;
 bool bRookAMoved = false, bRookHMoved = false;
 
+SDL_Point enPassantTargetSquare = {-1, -1};
+
 bool init();
 bool loadMedia();
 void close();
 void renderBoard();
 void renderPieces();
+void renderPromotionChoice();
 void handleMouseDown(int x, int y);
 void handleMouseMotion(int x, int y);
 void handleMouseUp(int x, int y);
-SDL_Texture* loadTexture(const char* path);
+void handlePromotionClick(int x, int y);
 bool isValidMove(char boardState[8][8], char piece, int fromX, int fromY, int toX, int toY, char player);
 bool isSquareAttacked(char boardState[8][8], int x, int y, char attackerColor);
 bool isKingInCheck(char boardState[8][8], char kingColor);
+bool hasLegalMoves(char playerColor);
+SDL_Texture* loadTexture(const char* path);
 
 int main(int argc, char* args[]) {
     if (!init()) {
@@ -66,17 +76,23 @@ int main(int argc, char* args[]) {
         while (SDL_PollEvent(&e) != 0) {
             if (e.type == SDL_QUIT) {
                 quit = true;
-            } else {
-                switch (e.type) {
-                    case SDL_MOUSEBUTTONDOWN:
-                        handleMouseDown(e.button.x, e.button.y);
-                        break;
-                    case SDL_MOUSEMOTION:
-                        handleMouseMotion(e.motion.x, e.motion.y);
-                        break;
-                    case SDL_MOUSEBUTTONUP:
-                        handleMouseUp(e.button.x, e.button.y);
-                        break;
+            } else if (!gameOver) {
+                if (awaitingPromotion) {
+                    if (e.type == SDL_MOUSEBUTTONDOWN) {
+                        handlePromotionClick(e.button.x, e.button.y);
+                    }
+                } else {
+                    switch (e.type) {
+                        case SDL_MOUSEBUTTONDOWN:
+                            handleMouseDown(e.button.x, e.button.y);
+                            break;
+                        case SDL_MOUSEMOTION:
+                            handleMouseMotion(e.motion.x, e.motion.y);
+                            break;
+                        case SDL_MOUSEBUTTONUP:
+                            handleMouseUp(e.button.x, e.button.y);
+                            break;
+                    }
                 }
             }
         }
@@ -85,6 +101,10 @@ int main(int argc, char* args[]) {
         SDL_RenderClear(gRenderer);
         renderBoard();
         renderPieces();
+
+        if (awaitingPromotion) {
+            renderPromotionChoice();
+        }
         SDL_RenderPresent(gRenderer);
     }
 
@@ -113,9 +133,8 @@ SDL_Texture* loadTexture(const char* path) {
 }
 
 void close() {
-    for (int i = 0; i < 128; ++i) {
-        if (gPieceTextures[i]) SDL_DestroyTexture(gPieceTextures[i]);
-    }
+    for (int i = 0; i < 128; ++i) if (gPieceTextures[i]) SDL_DestroyTexture(gPieceTextures[i]);
+
     SDL_DestroyRenderer(gRenderer);
     SDL_DestroyWindow(gWindow);
     IMG_Quit();
@@ -161,6 +180,24 @@ void renderPieces() {
     }
 }
 
+void renderPromotionChoice() {
+    const char* choices = (currentPlayer == 'w') ? "QRNBo" : "qrnb";
+    int x = promotionSquare.x;
+    int y = promotionSquare.y;
+
+    SDL_SetRenderDrawColor(gRenderer, 100, 100, 100, 150);
+    int startY = (y == 0) ? 0 : SCREEN_HEIGHT - 4 * SQUARE_SIZE;
+    SDL_Rect bgRect = {x * SQUARE_SIZE, startY, SQUARE_SIZE, 4 * SQUARE_SIZE};
+    SDL_RenderFillRect(gRenderer, &bgRect);
+
+    for (int i = 0; i < 4; ++i) {
+        char piece = choices[i];
+        int drawY = (y == 0) ? i : 7 - i;
+        SDL_Rect pieceRect = {x * SQUARE_SIZE, drawY * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE};
+        SDL_RenderCopy(gRenderer, gPieceTextures[(int)piece], NULL, &pieceRect);
+    }
+}
+
 void handleMouseDown(int x, int y) {
     int boardX = x / SQUARE_SIZE;
     int boardY = y / SQUARE_SIZE;
@@ -189,36 +226,58 @@ void handleMouseUp(int x, int y) {
 
     int toX = x / SQUARE_SIZE;
     int toY = y / SQUARE_SIZE;
-    bool moveIsLegal = false;
 
     if (isValidMove(board, draggedPiece, dragStartPosition.x, dragStartPosition.y, toX, toY, currentPlayer)) {
         char tempBoard[8][8];
         memcpy(tempBoard, board, sizeof(board));
         tempBoard[toY][toX] = draggedPiece;
-        tempBoard[dragStartPosition.y][dragStartPosition.x] = ' ';
 
-        if (!isKingInCheck(tempBoard, currentPlayer)) {
-            moveIsLegal = true;
+        if (toupper(draggedPiece) == 'P' && toX == enPassantTargetSquare.x && toY == enPassantTargetSquare.y) {
+            if (currentPlayer == 'w') tempBoard[toY + 1][toX] = ' ';
+            else tempBoard[toY - 1][toX] = ' ';
         }
-    }
-
-    if (moveIsLegal) {
-        board[toY][toX] = draggedPiece;
 
         if (toupper(draggedPiece) == 'K' && abs(toX - dragStartPosition.x) == 2) {
-            if (toX == 6) { board[toY][5] = board[toY][7]; board[toY][7] = ' '; }
-            else { board[toY][3] = board[toY][0]; board[toY][0] = ' '; }
+            if (toX == 6) { tempBoard[toY][5] = tempBoard[toY][7]; tempBoard[toY][7] = ' '; }
+            else { tempBoard[toY][3] = tempBoard[toY][0]; tempBoard[toY][0] = ' '; }
         }
 
-        // castling
-        if (draggedPiece == 'K') wKingMoved = true;
-        if (draggedPiece == 'k') bKingMoved = true;
-        if (draggedPiece == 'R' && dragStartPosition.x == 0 && dragStartPosition.y == 7) wRookAMoved = true;
-        if (draggedPiece == 'R' && dragStartPosition.x == 7 && dragStartPosition.y == 7) wRookHMoved = true;
-        if (draggedPiece == 'r' && dragStartPosition.x == 0 && dragStartPosition.y == 0) bRookAMoved = true;
-        if (draggedPiece == 'r' && dragStartPosition.x == 7 && dragStartPosition.y == 0) bRookHMoved = true;
+        if (!isKingInCheck(tempBoard, currentPlayer)) {
+            memcpy(board, tempBoard, sizeof(board));
 
-        currentPlayer = (currentPlayer == 'w') ? 'b' : 'w';
+            if (toupper(draggedPiece) == 'P' && (toY == 0 || toY == 7)) {
+                awaitingPromotion = true;
+                promotionSquare.x = toX;
+                promotionSquare.y = toY;
+            } else {
+                enPassantTargetSquare.x = -1; enPassantTargetSquare.y = -1;
+                if (toupper(draggedPiece) == 'P' && abs(toY - dragStartPosition.y) == 2) {
+                    enPassantTargetSquare.x = toX;
+                    enPassantTargetSquare.y = (currentPlayer == 'w') ? toY + 1 : toY - 1;
+                }
+
+                // castling
+                if (draggedPiece == 'K') wKingMoved = true;
+                if (draggedPiece == 'k') bKingMoved = true;
+                if (draggedPiece == 'R' && dragStartPosition.x == 0 && dragStartPosition.y == 7) wRookAMoved = true;
+                if (draggedPiece == 'R' && dragStartPosition.x == 7 && dragStartPosition.y == 7) wRookHMoved = true;
+                if (draggedPiece == 'r' && dragStartPosition.x == 0 && dragStartPosition.y == 0) bRookAMoved = true;
+                if (draggedPiece == 'r' && dragStartPosition.x == 7 && dragStartPosition.y == 0) bRookHMoved = true;
+
+                currentPlayer = (currentPlayer == 'w') ? 'b' : 'w';
+            }
+
+            if (!hasLegalMoves(currentPlayer) && isKingInCheck(board, currentPlayer)) {
+                printf("checkmate!! %s wins.\n", (currentPlayer == 'b' ? "White" : "Black"));
+                gameOver = true;
+            } else if (isKingInCheck(board, currentPlayer)) {
+                printf("check!\n");
+            }
+
+        } else {
+            board[dragStartPosition.y][dragStartPosition.x] = draggedPiece;
+            printf("illegal move, king is in check/cannot put king in check\n");
+        }
     } else {
         board[dragStartPosition.y][dragStartPosition.x] = draggedPiece;
     }
@@ -227,12 +286,42 @@ void handleMouseUp(int x, int y) {
     draggedPiece = ' ';
 }
 
+void handlePromotionClick(int x, int y) {
+    int boardX = x / SQUARE_SIZE;
+    int boardY = y / SQUARE_SIZE;
+    if (boardX != promotionSquare.x) return;
+
+    char piece = ' ';
+    const char* choices = (currentPlayer == 'w') ? "QRNBo" : "qrnb";
+    int startY = (promotionSquare.y == 0) ? 0 : 4;
+
+    if (boardY >= startY && boardY < startY + 4) {
+        int choiceIndex = (promotionSquare.y == 0) ? boardY : 7 - boardY;
+        piece = choices[choiceIndex];
+    }
+
+    if (piece != ' '){
+        board[promotionSquare.y][promotionSquare.x] = piece;
+        awaitingPromotion = false;
+        promotionSquare.x = -1; promotionSquare.y = -1;
+        enPassantTargetSquare.x = -1; enPassantTargetSquare.y = -1;
+
+        currentPlayer = (currentPlayer == 'w') ? 'b' : 'w';
+
+        if (!hasLegalMoves(currentPlayer) && isKingInCheck(board, currentPlayer)) {
+            printf("CHECKMATE! %s wins.\n", (currentPlayer == 'b' ? "White" : "Black"));
+            gameOver = true;
+        } else if (isKingInCheck(board, currentPlayer)) {
+            printf("Check!\n");
+        }
+    }
+}
+
 bool isValidMove(char boardState[8][8], char piece, int fromX, int fromY, int toX, int toY, char player) {
     if (fromX < 0 || fromX > 7 || fromY < 0 || fromY > 7 || toX < 0 || toX > 7 || toY < 0 || toY > 7) return false;
     if (fromX == toX && fromY == toY) return false;
 
     char destPiece = boardState[toY][toX];
-
     if (destPiece != ' ' && ((isupper(piece) && isupper(destPiece)) || (islower(piece) && islower(destPiece)))) return false;
 
     int dx = toX - fromX;
@@ -241,15 +330,19 @@ bool isValidMove(char boardState[8][8], char piece, int fromX, int fromY, int to
     switch (toupper(piece)) {
         case 'P':
             if (player == 'w') {
-                if (dx == 0 && dy == -1 && destPiece == ' ') return true;
-                if (dx == 0 && dy == -2 && fromY == 6 && destPiece == ' ' && boardState[fromY - 1][fromX] == ' ') return true;
-
+                if (dx == 0 && destPiece == ' ') {
+                    if (dy == -1) return true;
+                    if (dy == -2 && fromY == 6 && boardState[fromY - 1][fromX] == ' ') return true;
+                }
                 if (abs(dx) == 1 && dy == -1 && destPiece != ' ' && islower(destPiece)) return true;
+                if (abs(dx) == 1 && dy == -1 && toX == enPassantTargetSquare.x && toY == enPassantTargetSquare.y) return true;
             } else {
-                if (dx == 0 && dy == 1 && destPiece == ' ') return true;
-                if (dx == 0 && dy == 2 && fromY == 1 && destPiece == ' ' && boardState[fromY + 1][fromX] == ' ') return true;
-
+                if (dx == 0 && destPiece == ' ') {
+                    if (dy == 1) return true;
+                    if (dy == 2 && fromY == 1 && boardState[fromY + 1][fromX] == ' ') return true;
+                }
                 if (abs(dx) == 1 && dy == 1 && destPiece != ' ' && isupper(destPiece)) return true;
+                if (abs(dx) == 1 && dy == 1 && toX == enPassantTargetSquare.x && toY == enPassantTargetSquare.y) return true;
             }
             return false;
 
@@ -257,25 +350,18 @@ bool isValidMove(char boardState[8][8], char piece, int fromX, int fromY, int to
 
         case 'B':
             if (abs(dx) != abs(dy)) return false;
-            int stepX_b = (dx > 0) ? 1 : -1;
-            int stepY_b = (dy > 0) ? 1 : -1;
-            for (int i = 1; i < abs(dx); ++i) {
-                if (boardState[fromY + i * stepY_b][fromX + i * stepX_b] != ' ') return false;
-            }
+            int stepX_b = (dx > 0) ? 1 : -1; int stepY_b = (dy > 0) ? 1 : -1;
+            for (int i = 1; i < abs(dx); ++i) if (boardState[fromY + i * stepY_b][fromX + i * stepX_b] != ' ') return false;
             return true;
 
         case 'R':
             if (dx != 0 && dy != 0) return false;
             if (dx == 0) {
                 int stepY_r = (dy > 0) ? 1 : -1;
-                for (int i = 1; i < abs(dy); ++i) {
-                    if (boardState[fromY + i * stepY_r][fromX] != ' ') return false;
-                }
+                for (int i = 1; i < abs(dy); ++i) if (boardState[fromY + i * stepY_r][fromX] != ' ') return false;
             } else {
                 int stepX_r = (dx > 0) ? 1 : -1;
-                for (int i = 1; i < abs(dx); ++i) {
-                    if (boardState[fromY][fromX + i * stepX_r] != ' ') return false;
-                }
+                for (int i = 1; i < abs(dx); ++i) if (boardState[fromY][fromX + i * stepX_r] != ' ') return false;
             }
             return true;
 
@@ -293,8 +379,8 @@ bool isValidMove(char boardState[8][8], char piece, int fromX, int fromY, int to
 
             // castling
             if (abs(dx) == 2 && dy == 0) {
-                 if (isSquareAttacked(boardState, fromX, fromY, (player == 'w' ? 'b' : 'w'))) return false;
-
+                 char tempBoard[8][8]; memcpy(tempBoard, boardState, sizeof(char)*64); tempBoard[fromY][fromX] = ' ';
+                 if (isKingInCheck(tempBoard, player)) return false;
                  if (player == 'w') {
                      if (wKingMoved) return false;
                      if (dx == 2) {
@@ -356,4 +442,29 @@ bool isKingInCheck(char boardState[8][8], char kingColor) {
     if (kingX == -1) return false;
 
     return isSquareAttacked(boardState, kingX, kingY, attackerColor);
+}
+
+
+bool hasLegalMoves(char playerColor) {
+    char tempBoard[8][8];
+    for (int fromY = 0; fromY < 8; ++fromY) {
+        for (int fromX = 0; fromX < 8; ++fromX) {
+            char piece = board[fromY][fromX];
+            if (piece != ' ' && ((playerColor == 'w' && isupper(piece)) || (playerColor == 'b' && islower(piece)))) {
+                for (int toY = 0; toY < 8; ++toY) {
+                    for (int toX = 0; toX < 8; ++toX) {
+                        if (isValidMove(board, piece, fromX, fromY, toX, toY, playerColor)) {
+                            memcpy(tempBoard, board, sizeof(board));
+                            tempBoard[toY][toX] = piece;
+                            tempBoard[fromY][fromX] = ' ';
+                            if (!isKingInCheck(tempBoard, playerColor)) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return false;
 }
