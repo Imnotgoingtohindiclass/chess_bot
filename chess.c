@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 
 const int SCREEN_WIDTH = 640;
 const int SCREEN_HEIGHT = 640;
@@ -24,8 +25,10 @@ char board[8][8] = {
     {'R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R'}
 };
 
+char currentPlayer = 'w';
 bool isDragging = false;
 char draggedPiece = ' ';
+SDL_Point dragStartPosition = {-1, -1};
 SDL_Point mousePosition = {0, 0};
 
 bool init();
@@ -37,6 +40,7 @@ void handleMouseDown(int x, int y);
 void handleMouseMotion(int x, int y);
 void handleMouseUp(int x, int y);
 SDL_Texture* loadTexture(const char* path);
+bool isValidMove(char boardState[8][8], char piece, int fromX, int fromY, int toX, int toY, char player);
 
 int main(int argc, char* args[]) {
     if (!init()) {
@@ -83,7 +87,7 @@ int main(int argc, char* args[]) {
 
 bool init() {
     if (SDL_Init(SDL_INIT_VIDEO) < 0) return false;
-    gWindow = SDL_CreateWindow("chess Board", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
+    gWindow = SDL_CreateWindow("chess board", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
     if (!gWindow) return false;
     gRenderer = SDL_CreateRenderer(gWindow, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     if (!gRenderer) return false;
@@ -155,9 +159,11 @@ void handleMouseDown(int x, int y) {
     int boardY = y / SQUARE_SIZE;
     char piece = board[boardY][boardX];
 
-    if (piece != ' ') {
+    if (piece != ' ' && ((currentPlayer == 'w' && isupper(piece)) || (currentPlayer == 'b' && islower(piece)))) {
         isDragging = true;
         draggedPiece = piece;
+        dragStartPosition.x = boardX; // start position
+        dragStartPosition.y = boardY; // start position
         mousePosition.x = x;
         mousePosition.y = y;
         board[boardY][boardX] = ' ';
@@ -177,8 +183,84 @@ void handleMouseUp(int x, int y) {
     int toX = x / SQUARE_SIZE;
     int toY = y / SQUARE_SIZE;
 
-    board[toY][toX] = draggedPiece;
+    if (isValidMove(board, draggedPiece, dragStartPosition.x, dragStartPosition.y, toX, toY, currentPlayer)) {
+        board[toY][toX] = draggedPiece;
+        currentPlayer = (currentPlayer == 'w') ? 'b' : 'w';
+    } else {
+        board[dragStartPosition.y][dragStartPosition.x] = draggedPiece;
+    }
 
     isDragging = false;
     draggedPiece = ' ';
+}
+
+bool isValidMove(char boardState[8][8], char piece, int fromX, int fromY, int toX, int toY, char player) {
+    if (fromX < 0 || fromX > 7 || fromY < 0 || fromY > 7 || toX < 0 || toX > 7 || toY < 0 || toY > 7) return false;
+    if (fromX == toX && fromY == toY) return false;
+
+    char destPiece = boardState[toY][toX];
+
+    if (destPiece != ' ' && ((isupper(piece) && isupper(destPiece)) || (islower(piece) && islower(destPiece)))) return false;
+
+    int dx = toX - fromX;
+    int dy = toY - fromY;
+
+    switch (toupper(piece)) {
+        case 'P':
+            if (player == 'w') {
+                if (dx == 0 && dy == -1 && destPiece == ' ') return true;
+                if (dx == 0 && dy == -2 && fromY == 6 && destPiece == ' ' && boardState[fromY - 1][fromX] == ' ') return true;
+
+                if (abs(dx) == 1 && dy == -1 && destPiece != ' ' && islower(destPiece)) return true;
+            } else {
+                if (dx == 0 && dy == 1 && destPiece == ' ') return true;
+                if (dx == 0 && dy == 2 && fromY == 1 && destPiece == ' ' && boardState[fromY + 1][fromX] == ' ') return true;
+
+                if (abs(dx) == 1 && dy == 1 && destPiece != ' ' && isupper(destPiece)) return true;
+            }
+            return false;
+
+        case 'N':
+            return (abs(dx) == 1 && abs(dy) == 2) || (abs(dx) == 2 && abs(dy) == 1);
+
+        case 'B':
+            if (abs(dx) != abs(dy)) return false;
+            int stepX_b = (dx > 0) ? 1 : -1;
+            int stepY_b = (dy > 0) ? 1 : -1;
+            for (int i = 1; i < abs(dx); ++i) {
+                if (boardState[fromY + i * stepY_b][fromX + i * stepX_b] != ' ') return false;
+            }
+            return true;
+
+        case 'R':
+            if (dx != 0 && dy != 0) return false;
+            if (dx == 0) {
+                int stepY_r = (dy > 0) ? 1 : -1;
+                for (int i = 1; i < abs(dy); ++i) {
+                    if (boardState[fromY + i * stepY_r][fromX] != ' ') return false;
+                }
+            } else {
+                int stepX_r = (dx > 0) ? 1 : -1;
+                for (int i = 1; i < abs(dx); ++i) {
+                    if (boardState[fromY][fromX + i * stepX_r] != ' ') return false;
+                }
+            }
+            return true;
+
+        case 'Q':
+             if (abs(dx) != abs(dy) && dx != 0 && dy != 0) return false;
+
+             int stepX_q = (dx > 0) ? 1 : ((dx < 0) ? -1 : 0);
+             int stepY_q = (dy > 0) ? 1 : ((dy < 0) ? -1 : 0);
+             int steps = (abs(dx) > abs(dy)) ? abs(dx) : abs(dy);
+             for(int i = 1; i < steps; ++i) {
+                 if (boardState[fromY + i*stepY_q][fromX + i*stepX_q] != ' ') return false;
+             }
+             return true;
+
+        case 'K':
+            return (abs(dx) <= 1 && abs(dy) <= 1);
+    }
+
+    return false;
 }
