@@ -24,11 +24,18 @@ char board[8][8] = {
     {'R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R'}
 };
 
+bool isDragging = false;
+char draggedPiece = ' ';
+SDL_Point mousePosition = {0, 0};
+
 bool init();
 bool loadMedia();
 void close();
 void renderBoard();
 void renderPieces();
+void handleMouseDown(int x, int y);
+void handleMouseMotion(int x, int y);
+void handleMouseUp(int x, int y);
 SDL_Texture* loadTexture(const char* path);
 
 int main(int argc, char* args[]) {
@@ -48,6 +55,18 @@ int main(int argc, char* args[]) {
         while (SDL_PollEvent(&e) != 0) {
             if (e.type == SDL_QUIT) {
                 quit = true;
+            } else {
+                switch (e.type) {
+                    case SDL_MOUSEBUTTONDOWN:
+                        handleMouseDown(e.button.x, e.button.y);
+                        break;
+                    case SDL_MOUSEMOTION:
+                        handleMouseMotion(e.motion.x, e.motion.y);
+                        break;
+                    case SDL_MOUSEBUTTONUP:
+                        handleMouseUp(e.button.x, e.button.y);
+                        break;
+                }
             }
         }
 
@@ -62,10 +81,9 @@ int main(int argc, char* args[]) {
     return 0;
 }
 
-
 bool init() {
     if (SDL_Init(SDL_INIT_VIDEO) < 0) return false;
-    gWindow = SDL_CreateWindow("chess board", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
+    gWindow = SDL_CreateWindow("Chess Board", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
     if (!gWindow) return false;
     gRenderer = SDL_CreateRenderer(gWindow, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     if (!gRenderer) return false;
@@ -83,7 +101,6 @@ SDL_Texture* loadTexture(const char* path) {
     return newTexture;
 }
 
-
 void close() {
     for (int i = 0; i < 128; ++i) {
         if (gPieceTextures[i]) SDL_DestroyTexture(gPieceTextures[i]);
@@ -92,17 +109,6 @@ void close() {
     SDL_DestroyWindow(gWindow);
     IMG_Quit();
     SDL_Quit();
-}
-
-void renderBoard() {
-    for (int r = 0; r < 8; ++r) {
-        for (int c = 0; c < 8; ++c) {
-            SDL_Rect squareRect = {c * SQUARE_SIZE, r * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE};
-            if ((r + c) % 2 == 0) SDL_SetRenderDrawColor(gRenderer, 238, 238, 210, 255);
-            else SDL_SetRenderDrawColor(gRenderer, 118, 150, 86, 255);
-            SDL_RenderFillRect(gRenderer, &squareRect);
-        }
-    }
 }
 
 bool loadMedia() {
@@ -117,6 +123,17 @@ bool loadMedia() {
     return true;
 }
 
+void renderBoard() {
+    for (int r = 0; r < 8; ++r) {
+        for (int c = 0; c < 8; ++c) {
+            SDL_Rect squareRect = {c * SQUARE_SIZE, r * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE};
+            if ((r + c) % 2 == 0) SDL_SetRenderDrawColor(gRenderer, 238, 238, 210, 255);
+            else SDL_SetRenderDrawColor(gRenderer, 118, 150, 86, 255);
+            SDL_RenderFillRect(gRenderer, &squareRect);
+        }
+    }
+}
+
 void renderPieces() {
     for (int r = 0; r < 8; ++r) {
         for (int c = 0; c < 8; ++c) {
@@ -127,4 +144,41 @@ void renderPieces() {
             }
         }
     }
+    if (isDragging && draggedPiece != ' ') {
+        SDL_Rect destRect = {mousePosition.x - SQUARE_SIZE / 2, mousePosition.y - SQUARE_SIZE / 2, SQUARE_SIZE, SQUARE_SIZE};
+        SDL_RenderCopy(gRenderer, gPieceTextures[(int)draggedPiece], NULL, &destRect);
+    }
+}
+
+void handleMouseDown(int x, int y) {
+    int boardX = x / SQUARE_SIZE;
+    int boardY = y / SQUARE_SIZE;
+    char piece = board[boardY][boardX];
+
+    if (piece != ' ') {
+        isDragging = true;
+        draggedPiece = piece;
+        mousePosition.x = x;
+        mousePosition.y = y;
+        board[boardY][boardX] = ' ';
+    }
+}
+
+void handleMouseMotion(int x, int y) {
+    if (isDragging) {
+        mousePosition.x = x;
+        mousePosition.y = y;
+    }
+}
+
+void handleMouseUp(int x, int y) {
+    if (!isDragging) return;
+
+    int toX = x / SQUARE_SIZE;
+    int toY = y / SQUARE_SIZE;
+
+    board[toY][toX] = draggedPiece;
+
+    isDragging = false;
+    draggedPiece = ' ';
 }
