@@ -444,7 +444,6 @@ bool isKingInCheck(char boardState[8][8], char kingColor) {
     return isSquareAttacked(boardState, kingX, kingY, attackerColor);
 }
 
-
 bool hasLegalMoves(char playerColor) {
     char tempBoard[8][8];
     for (int fromY = 0; fromY < 8; ++fromY) {
