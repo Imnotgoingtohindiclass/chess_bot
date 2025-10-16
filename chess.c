@@ -27,6 +27,7 @@ char board[8][8] = {
 
 char currentPlayer = 'w';
 bool gameOver = false;
+bool stalemate = false;
 
 bool isDragging = false;
 char draggedPiece = ' ';
@@ -101,6 +102,7 @@ int main(int argc, char* args[]) {
         SDL_RenderClear(gRenderer);
         renderBoard();
         renderPieces();
+        SDL_Delay(16);
 
         if (awaitingPromotion) {
             renderPromotionChoice();
@@ -267,9 +269,15 @@ void handleMouseUp(int x, int y) {
                 currentPlayer = (currentPlayer == 'w') ? 'b' : 'w';
             }
 
-            if (!hasLegalMoves(currentPlayer) && isKingInCheck(board, currentPlayer)) {
-                printf("checkmate!! %s wins.\n", (currentPlayer == 'b' ? "White" : "Black"));
-                gameOver = true;
+            if (!hasLegalMoves(currentPlayer)) {
+                if (isKingInCheck(board, currentPlayer)) {
+                    printf("checkmate!! %s wins.\n", (currentPlayer == 'b' ? "White" : "Black"));
+                    gameOver = true;
+                } else {
+                    printf("stalemate!\n");
+                    stalemate = true;
+                    gameOver = true;
+                }
             } else if (isKingInCheck(board, currentPlayer)) {
                 printf("check!\n");
             }
@@ -308,11 +316,17 @@ void handlePromotionClick(int x, int y) {
 
         currentPlayer = (currentPlayer == 'w') ? 'b' : 'w';
 
-        if (!hasLegalMoves(currentPlayer) && isKingInCheck(board, currentPlayer)) {
-            printf("CHECKMATE! %s wins.\n", (currentPlayer == 'b' ? "White" : "Black"));
-            gameOver = true;
+        if (!hasLegalMoves(currentPlayer)) {
+            if (isKingInCheck(board, currentPlayer)) {
+                printf("checkmate! %s wins.\n", (currentPlayer == 'b' ? "White" : "Black"));
+                gameOver = true;
+            } else {
+                printf("stalemate!\n");
+                stalemate = true;
+                gameOver = true;
+            }
         } else if (isKingInCheck(board, currentPlayer)) {
-            printf("Check!\n");
+            printf("check!\n");
         }
     }
 }
@@ -379,29 +393,35 @@ bool isValidMove(char boardState[8][8], char piece, int fromX, int fromY, int to
 
             // castling
             if (abs(dx) == 2 && dy == 0) {
-                 char tempBoard[8][8]; memcpy(tempBoard, boardState, sizeof(char)*64); tempBoard[fromY][fromX] = ' ';
-                 if (isKingInCheck(tempBoard, player)) return false;
-                 if (player == 'w') {
-                     if (wKingMoved) return false;
-                     if (dx == 2) {
-                         if (wRookHMoved || boardState[7][5] != ' ' || boardState[7][6] != ' ') return false;
-                         return !isSquareAttacked(boardState, 5, 7, 'b') && !isSquareAttacked(boardState, 6, 7, 'b');
-                     } else {
-                         if (wRookAMoved || boardState[7][1] != ' ' || boardState[7][2] != ' ' || boardState[7][3] != ' ') return false;
-                         return !isSquareAttacked(boardState, 2, 7, 'b') && !isSquareAttacked(boardState, 3, 7, 'b');
-                     }
-                 } else {
-                     if (bKingMoved) return false;
-                     if (dx == 2) {
-                         if (bRookHMoved || boardState[0][5] != ' ' || boardState[0][6] != ' ') return false;
-                         return !isSquareAttacked(boardState, 5, 0, 'w') && !isSquareAttacked(boardState, 6, 0, 'w');
-                     } else {
-                         if (bRookAMoved || boardState[0][1] != ' ' || boardState[0][2] != ' ' || boardState[0][3] != ' ') return false;
-                         return !isSquareAttacked(boardState, 2, 0, 'w') && !isSquareAttacked(boardState, 3, 0, 'w');
-                     }
-                 }
-             }
-             return false;
+                char tempBoard[8][8];
+                memcpy(tempBoard, boardState, sizeof(char) * 8 * 8);
+                tempBoard[fromY][fromX] = ' ';
+                if (isKingInCheck(tempBoard, player)) return false;
+                if (player == 'w') {
+                    if (wKingMoved) return false;
+                    if (dx == 2) {
+                        if (wRookHMoved || boardState[7][5] != ' ' || boardState[7][6] != ' ') return false;
+                        if (isSquareAttacked(boardState, 5, 7, 'b') || isSquareAttacked(boardState, 6, 7, 'b')) return false;
+                        return true;
+                    } else {
+                        if (wRookAMoved || boardState[7][1] != ' ' || boardState[7][2] != ' ' || boardState[7][3] != ' ') return false;
+                        if (isSquareAttacked(boardState, 2, 7, 'b') || isSquareAttacked(boardState, 3, 7, 'b')) return false;
+                        return true;
+                    }
+                } else {
+                    if (bKingMoved) return false;
+                    if (dx == 2) {
+                        if (bRookHMoved || boardState[0][5] != ' ' || boardState[0][6] != ' ') return false;
+                        if (isSquareAttacked(boardState, 5, 0, 'w') || isSquareAttacked(boardState, 6, 0, 'w')) return false;
+                        return true;
+                    } else {
+                        if (bRookAMoved || boardState[0][1] != ' ' || boardState[0][2] != ' ' || boardState[0][3] != ' ') return false;
+                        if (isSquareAttacked(boardState, 2, 0, 'w') || isSquareAttacked(boardState, 3, 0, 'w')) return false;
+                        return true;
+                    }
+                }
+            }
+            return false;
     }
     return false;
 }
